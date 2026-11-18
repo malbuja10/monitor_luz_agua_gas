@@ -16,7 +16,7 @@ medidor ──UDP/TCP──► receivers/*.js ──HTTP local──► public/a
 | `public/` | DocumentRoot de Apache: páginas, `api/`, `assets/` (Chart.js 4.4.1 incluido en `assets/vendor`) |
 | `src/` | `bootstrap.php` (config, BD, utilidades), `auth.php` (sesión, roles, CSRF), `layout.php`, `ingesta.php` |
 | `sql/` | `schema.sql` (tablas), `seed.sql` (medidores de prueba) |
-| `receivers/` | `zy-water-udp.js` (agua, UDP), `ingest-client.js` (cliente para enviar al sitio) |
+| `receivers/` | `zy-receiver.js` (energía, TCP), `zy-water-udp.js` (agua, UDP), `ingest-client.js` (cliente para enviar al sitio) |
 | `scripts/crear_usuario.php` | crea o restablece usuarios desde la consola |
 | `deploy/apache-monitor.conf` | VirtualHost de ejemplo |
 
@@ -55,12 +55,19 @@ pm2 save
 `INGEST_HOST` hace falta si Apache sirve el sitio con un VirtualHost por nombre. Con `WATER_DOWNLINK_ID=1` las
 tramas de bajada llevan delante el ID de 8 B (pendiente confirmar con Zhongyi cuál formato acepta el medidor).
 
-### Receptor de energía
-Falta integrar `zy-receiver.js` (la versión en producción, formato big-endian con login `ZY-IOT`). Hay que llamar a
-`reportar()` de `receivers/ingest-client.js` en cada trama 0x12 con
-`{tipo:'energia', dispositivo_id, evento:'lectura', valor: kWh, corte:'con_servicio'|'cortado', datos:{V,I,P,...}}`
-y transmitir los comandos devueltos (`conectar`, `cortar`, `consultar`, `ciclo` en segundos) con las tramas
-`0A 01 ..`, `0A 02 ..`, `0A 04 00 01`.
+### Receptor de energía con ingesta
+`receivers/zy-receiver.js` es el receptor de producción (login `ZY-IOT`, reporte big-endian, réplica a Zhongyi,
+consola) más el envío al sitio. Sin `INGEST_TOKEN` funciona exactamente como antes.
+```bash
+pm2 delete zy-receiver
+cd /root   # carpeta donde se escribe zy-raw.log
+INGEST_TOKEN=<token> INGEST_URL=http://127.0.0.1/api/ingest.php INGEST_HOST=monitor.minkafab.com \
+  pm2 start /var/www/monitor/receivers/zy-receiver.js --name zy-receiver -- 10091 udp:58.215.245.18:20131
+pm2 save
+```
+Comandos web → tramas: conectar `0A010101`, cortar `0A010001`, consultar `0A040001`, ciclo `0A02<seg 4 B BE>01`.
+Se envían cuando el medidor reporta (el 4G cae a ~60 s, así que no se puede esperar a una conexión permanente).
+Ojo: con la réplica activa y `FORWARD_DOWNLINK` distinto de 0, Zhongyi también puede mandar comandos al medidor.
 
 ## Roles
 - **lector**: panel, detalle, gráficos, alarmas, exportar CSV.

@@ -17,7 +17,9 @@ Sitio web de monitoreo (energía, agua, gas) + receptores Node de los medidores 
 - `dev.minkafab.com` (135.181.100.95), procesos con `pm2`.
 - `zy-receiver.js` — medidores de energía, **TCP 10091**. Réplica opcional a Zhongyi por UDP:
   `pm2 start zy-receiver.js --name zy-receiver -- 10091 udp:58.215.245.18:20131`
-  (`FORWARD_DOWNLINK=0` bloquea comandos de Zhongyi hacia el medidor). **Aún no está en este repo.**
+  (`FORWARD_DOWNLINK=0` bloquea comandos de Zhongyi hacia el medidor). Está en `receivers/zy-receiver.js`
+  e integrado con la web (reportes 0x12 → BD; comandos en cola → `0A ..`; respuestas `0A fn código 01` → confirmación
+  por acción, porque no llevan FID).
 - `receivers/zy-water-udp.js` — medidores de agua, **UDP 10091**, log en `zy-water.jsonl`. Convive con el TCP.
 
 ## Medidores de energía DTSZY06 (big-endian)
@@ -49,11 +51,12 @@ Sitio web de monitoreo (energía, agua, gas) + receptores Node de los medidores 
   Implementado en `tramaBajada()`; `WATER_DOWNLINK_ID=1` antepone el ID de 8 B.
 
 ## Pendientes
-- Integrar el `zy-receiver.js` de producción (energía) con `receivers/ingest-client.js`.
 - Confirmar con Zhongyi: si la bajada de agua lleva prefijo IMEI+0 y si el medidor espera ACK
   (reporta cada ~10 s, posible reenvío por falta de respuesta).
 - Confirmar formato UDP esperado por Zhongyi y alta de medidores en en.energy.zhongyismart.com.
 - Energía: en banco solo llega L3 (probable Err-002); bits de alarma/estado; escala de potencia.
+  Mientras `estado_hex`/`alarma_hex` no estén descifrados, la web no los interpreta: el estado del relé mostrado
+  es el del último comando de corte confirmado, y no se generan alarmas de energía.
 - Gas: sin medidores ni protocolo todavía (el tipo ya existe en la BD y en la web).
 - LoRaWAN (agua DN25): falta integración con el network server.
 

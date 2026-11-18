@@ -66,6 +66,7 @@ function procesar_reporte(array $r): array
                    WHERE id IN (SELECT id FROM comandos WHERE medidor_id = ? AND estado = 'pendiente'
                                 ORDER BY id FOR UPDATE SKIP LOCKED)
                    RETURNING id, accion, parametro", [$m['id']])->fetchAll();
+        usort($cmds, fn($x, $y) => $x['id'] <=> $y['id']); // RETURNING no garantiza orden
 
         $pdo->commit();
         return ['medidor_id' => (int) $m['id'], 'comandos' => $cmds];
@@ -126,15 +127,35 @@ function sincronizar_alarmas(int $mid, array $activas): void
     }
 }
 
+/**
+ * Respuesta del medidor a un comando. Se busca el comando 'enviado' más reciente:
+ *  - por FID (agua: {"ok":true,"fid":3}), o
+ *  - por acción, si la trama no lleva FID (energía: {"ok":false,"acciones":["conectar","cortar"],"detalle":"TIMEOUT"}).
+ */
 function registrar_ack(int $mid, array $ack): void
 {
-    $fid = isset($ack['fid']) ? (int) $ack['fid'] : null;
-    if ($fid === null) return;
     $ok = !empty($ack['ok']);
-    q("UPDATE comandos SET estado = ?, confirmado = now(), detalle = ?
-       WHERE id = (SELECT id FROM comandos WHERE medidor_id = ? AND fid = ? AND estado = 'enviado'
-                   ORDER BY id DESC LIMIT 1)",
-      [$ok ? 'confirmado' : 'error', $ok ? 'ACK OK' : 'ACK ERROR', $mid, $fid]);
+    $detalle = (string) ($ack['detalle'] ?? ($ok ? 'ACK OK' : 'ACK ERROR'));
+    if (isset($ack['fid'])) {
+        $filtro = 'fid = ?';
+        $param = (int) $ack['fid'];
+    } elseif (is_array($ack['acciones'] ?? null) && $ack['acciones']) {
+        $filtro = 'accion = ANY(?::text[])';
+        $param = '{' . implode(',', array_map(fn($a) => preg_replace('/[^a-z_]/', '', (string) $a), $ack['acciones'])) . '}';
+    } else {
+        return;
+    }
+    $c = q("UPDATE comandos SET estado = ?, confirmado = now(), detalle = ?
+            WHERE id = (SELECT id FROM comandos WHERE medidor_id = ? AND $filtro AND estado = 'enviado'
+                        ORDER BY id DESC LIMIT 1)
+            RETURNING accion", [$ok ? 'confirmado' : 'error', $detalle, $mid, $param])->fetch();
+
+    // Energía: el byte de estado del reporte aún no está descifrado, así que el estado del relé
+    // que se muestra es el del último comando de corte confirmado por el medidor.
+    if ($ok && $c && in_array($c['accion'], ['conectar', 'cortar'], true)) {
+        q("UPDATE medidores SET ultimo_dato = jsonb_set(coalesce(ultimo_dato, '{}'::jsonb), '{corte}', to_jsonb(?::text))
+           WHERE id = ? AND tipo = 'energia'", [$c['accion'] === 'conectar' ? 'con_servicio' : 'cortado', $mid]);
+    }
 }
 
 /** Si el medidor ya reporta el estado pedido, el comando de corte se da por confirmado. */
