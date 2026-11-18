@@ -283,6 +283,14 @@ const server = net.createServer((sock) => {
   });
   sock.on('error', (e) => log(`[${ts()}] ERROR ${peer}: ${e.message}`));
 });
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`El puerto TCP ${PORT} ya está en uso: probablemente el receptor ya corre en pm2 ("pm2 ls").\n` +
+      `Para ver lo que llega: pm2 logs zy-receiver. Para usarlo a mano, primero: pm2 stop zy-receiver`);
+    process.exit(1);
+  }
+  throw e;
+});
 server.listen(PORT, '0.0.0.0', () => {
   log(`[${ts()}] Escuchando TCP en 0.0.0.0:${PORT}  (escribe "help")`);
   if (FWD) log(`[${ts()}] Réplica activa (${FWD.proto.toUpperCase()}) hacia ${FWD.host}:${FWD.port} (comandos de Zhongyi al medidor: ${FWD_DOWN ? 'SÍ' : 'NO'})`);

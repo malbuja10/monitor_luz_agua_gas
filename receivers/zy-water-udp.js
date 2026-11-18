@@ -151,6 +151,14 @@ if (require.main === module) {
     }
     await informarEnvios(errores);
   });
+  sock.on('error', (e) => {
+    if (e.code === 'EADDRINUSE') {
+      console.error(`El puerto UDP ${PORT} ya está en uso: probablemente el receptor ya corre en pm2 ("pm2 ls").\n` +
+        `Para ver lo que llega: pm2 logs zy-water-udp. Para usarlo a mano, primero: pm2 stop zy-water-udp`);
+      process.exit(1);
+    }
+    throw e;
+  });
   sock.bind(PORT, () => console.log(`Escuchando UDP ${PORT} -> ${LOG}${DOWNLINK_ID ? ' (bajada con ID)' : ''}`));
 }
 module.exports = { decode, aReporte, tramaBajada };
