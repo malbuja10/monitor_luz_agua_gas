@@ -117,12 +117,17 @@ function parseFrames(buf, onFrame, onRaw, onEvent) {
       const body = buf.subarray(i, end - 2), crc = buf.readUInt16BE(end - 2);
       const id = buf.subarray(i + 10, i + 10 + len).toString('latin1');
       const tipo = buf[i + 7], crcOk = crc16modbus(body) === crc ? 'OK' : 'MAL';
-      if (tipo === 1) log(`         ZY-IOT REGISTRO (login) ID="${id}" CRC ${crcOk}`);
+      if (tipo === 1) {
+        log(`         ZY-IOT REGISTRO (login) ID="${id}" CRC ${crcOk}`);
+        // El ID de las tramas es el ID ASCII del login + '0' (p. ej. "860628083606787" -> 8606280836067870).
+        if (crcOk === 'OK' && onEvent && /^[0-9A-F]{15}$/i.test(id)) onEvent('conexion', { id: (id + '0').toUpperCase() });
+      }
       else if (tipo === 3 && len === 0 && buf.length - end >= 8) {
         // Visto en campo: ZY-IOT tipo 3 sin datos + ID de 8 bytes (latido / "listo para recibir")
         const id8 = hex(buf.subarray(end, end + 8));
         log(`         ZY-IOT LATIDO (tipo 3) ID=${id8} CRC ${crcOk}`);
         onFrame(id8, null, null, null);
+        if (crcOk === 'OK' && onEvent) onEvent('conexion', { id: id8 });
         i = end + 8; continue;
       } else log(`         ZY-IOT tipo=${tipo} len=${len} datos=${hex(buf.subarray(i + 10, i + 10 + len))} CRC ${crcOk}`);
       i = end; continue;
@@ -346,8 +351,10 @@ async function alSitio(tipo, ev, sock, peer) {
                detalle: { 0: 'OK', 1: 'ERROR', 2: 'TIMEOUT' }[ev.code] ?? `código ${ev.code}` } });
       return;
     }
-    if (tipo !== 'reporte') return;
-    const comandos = await reportar(aReporteEnergia(ev, peer));
+    if (tipo !== 'reporte' && tipo !== 'conexion') return;
+    // Login y latidos actualizan la "última conexión" y permiten entregar comandos sin esperar al reporte.
+    const comandos = await reportar(tipo === 'reporte' ? aReporteEnergia(ev, peer)
+      : { tipo: 'energia', dispositivo_id: ev.id, desde: peer, evento: 'otro' });
     if (!comandos.length) return;
     const tramas = comandos.map((c) => ({ c, f: tramaEnergia(c) }));
     // Se registra la trama antes de transmitir, para que la respuesta encuentre su comando.

@@ -37,7 +37,8 @@ Sitio web de monitoreo (energía, agua, gas) + receptores Node de los medidores 
   batería 2 | V 3×2 | I 3×2 | P 3×2 + checksum add8 + 01.
 - Unidades: energía 0,01 kWh; V 0,01 V; I 0,001 A; P ~0,001 W (2 B, revisar con cargas > 65 W).
 - Bajada: 0A + función + datos + 01. Relé `0A 01 01/00 01`; ciclo `0A 02 <seg 4 B> 01`; lectura `0A 04 00 01`.
-- El 4G no envía latidos y cae a ~60 s: los comandos van en cola y se envían al reconectar.
+- En campo (nov-2026) ambos envían latidos `ZY-IOT` tipo 3 cada 60 s. Login y latidos se informan a la web
+  (actualizan la última conexión) y en ellos se entregan los comandos en cola, sin esperar al reporte 0x12.
 
 ## Medidores de agua ZYsmart (little-endian)
 | Medidor | Comunicación | ID |
