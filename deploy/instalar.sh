@@ -1,34 +1,38 @@
 #!/usr/bin/env bash
-# Instalación / actualización del Monitor de medidores en Ubuntu (Apache2 + PHP + PostgreSQL).
+# Instalación / actualización de la plataforma de medidores en Ubuntu (Apache2 + PHP + PostgreSQL).
 # Se puede ejecutar varias veces: no borra datos ni cambia contraseñas existentes.
+# Convive con otros sitios del servidor: se detiene (sin modificar nada) si el puerto, el archivo de
+# Apache o el usuario/base de PostgreSQL ya existen y no son de esta plataforma.
 #
-# Uso (desde el clon del repositorio, p. ej. /var/www/monitor):
-#   sudo bash deploy/instalar.sh [--receptores] [--dominio dev.minkafab.com] [--ruta /monitor] [--sin-apt]
+# Uso (desde el clon del repositorio, p. ej. /var/www/medidores):
+#   sudo bash deploy/instalar.sh [--receptores] [--puerto 8450] [--dominio dev.minkafab.com] [--sin-apt]
 #
-# El sitio se publica como subcarpeta (Alias de Apache) del sitio existente: https://dev.minkafab.com/monitor/
-# Usa el VirtualHost y el certificado HTTPS que ya tenga ese dominio; no crea VirtualHost propio.
+# El sitio se publica en un VirtualHost propio de Apache: https://dev.minkafab.com:8450/
+# (sites-available/medidores.conf). Usa el certificado de Let's Encrypt del dominio si existe
+# (o el indicado en CERT= y KEY=); si no hay certificado, queda en HTTP.
 #
-#   --dominio X    dominio ya servido por Apache en este servidor (por defecto dev.minkafab.com)
-#   --ruta /X      subcarpeta donde se publica (por defecto /monitor)
+#   --puerto N     puerto del sitio (por defecto 8450)
+#   --dominio X    nombre del servidor (por defecto dev.minkafab.com)
 #   --receptores   reinicia en pm2 los receptores de energía y agua desde este repositorio, con el token
 #                  de ingesta. Conserva carpeta de trabajo, argumentos (puerto, réplica a Zhongyi) y
 #                  variables FORWARD_DOWNLINK / WATER_DOWNLINK_ID de los procesos actuales.
 #   --sin-apt      no instala paquetes
 #
-# Variables opcionales: PM2_ENERGIA (zy-receiver), PM2_AGUA (zy-water-udp), DB_NOMBRE (monitor),
-#                       DB_USUARIO (monitor), DIR_LOGS (/var/lib/monitor, solo si el proceso no existía).
+# Variables opcionales: PM2_ENERGIA (zy-receiver), PM2_AGUA (zy-water-udp), DB_NOMBRE (medidores),
+#                       DB_USUARIO (medidores), DIR_LOGS (/var/lib/medidores, solo si el proceso no existía),
+#                       CERT y KEY (rutas del certificado TLS).
 set -euo pipefail
 
 DOMINIO="dev.minkafab.com"
-RUTA="/monitor"
+PUERTO=8450
 RECEPTORES=0; APT=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --dominio) DOMINIO="${2:?falta el dominio}"; shift 2 ;;
     --receptores) RECEPTORES=1; shift ;;
-    --ruta) RUTA="/${2#/}"; RUTA="${RUTA%/}"; shift 2 ;;
+    --puerto) PUERTO="${2:?falta el puerto}"; shift 2 ;;
     --sin-apt) APT=0; shift ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "Opción desconocida: $1" >&2; exit 1 ;;
   esac
 done
@@ -36,11 +40,12 @@ done
 APP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PM2_ENERGIA="${PM2_ENERGIA:-zy-receiver}"
 PM2_AGUA="${PM2_AGUA:-zy-water-udp}"
-DB_NOMBRE="${DB_NOMBRE:-monitor}"
-DB_USUARIO="${DB_USUARIO:-monitor}"
-DIR_LOGS="${DIR_LOGS:-/var/lib/monitor}"
+DB_NOMBRE="${DB_NOMBRE:-medidores}"
+DB_USUARIO="${DB_USUARIO:-medidores}"
+DIR_LOGS="${DIR_LOGS:-/var/lib/medidores}"
 CONF="$APP/config/config.php"
-CONF_APACHE=/etc/apache2/conf-available/monitor.conf
+CONF_APACHE=/etc/apache2/sites-available/medidores.conf
+MARCA='# medidores-zhongyi'
 
 paso() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
 ok()   { printf '   \033[32m✔\033[0m %s\n' "$*"; }
@@ -51,8 +56,12 @@ recargar_apache() { systemctl reload apache2 2>/dev/null || apache2ctl graceful;
 [ "$(id -u)" -eq 0 ] || fallo "Ejecutar con sudo."
 [ -f "$APP/public/index.php" ] && [ -f "$APP/sql/schema.sql" ] || fallo "No encuentro el sitio en $APP."
 grep -qi ubuntu /etc/os-release || aviso "No parece Ubuntu; se continúa igual."
-[[ "$RUTA" =~ ^/[A-Za-z0-9._-]+$ ]] || fallo "Ruta inválida: $RUTA (ejemplo: /monitor)."
-echo "Aplicación: $APP · Publicación: $DOMINIO$RUTA/"
+[[ "$PUERTO" =~ ^[0-9]+$ ]] && [ "$PUERTO" -ge 1024 ] && [ "$PUERTO" -le 65535 ] || fallo "Puerto inválido: $PUERTO"
+CERT="${CERT:-/etc/letsencrypt/live/$DOMINIO/fullchain.pem}"
+KEY="${KEY:-/etc/letsencrypt/live/$DOMINIO/privkey.pem}"
+if [ -r "$CERT" ] && [ -r "$KEY" ]; then ESQUEMA=https; else ESQUEMA=http; fi
+URL_SITIO="$ESQUEMA://$DOMINIO:$PUERTO/"
+echo "Aplicación: $APP · Publicación: $URL_SITIO"
 
 # ---------------------------------------------------------------- paquetes
 paso "Paquetes"
@@ -89,6 +98,34 @@ else
   systemctl restart apache2 2>/dev/null || apache2ctl restart
 fi
 
+# ---------------------------------------------------------------- verificaciones de convivencia
+# Nada se modifica hasta pasar estas comprobaciones.
+paso "Convivencia con otros sitios"
+CONF_NUEVA=0
+[ -f "$CONF" ] || CONF_NUEVA=1
+if [ -f "$CONF_APACHE" ] && ! grep -qF "$MARCA" "$CONF_APACHE"; then
+  fallo "$CONF_APACHE existe y no es de esta plataforma. No se modifica."
+fi
+# El puerto no debe estar declarado en otra configuración de Apache ni usado por otro programa.
+OCUPADO="$(grep -RlsE "^[[:space:]]*(Listen[[:space:]]+([^ ]+:)?$PUERTO([[:space:]]|$)|<VirtualHost[^>]*:$PUERTO[[:space:]>])" \
+            /etc/apache2/ports.conf /etc/apache2/sites-enabled/ /etc/apache2/conf-enabled/ 2>/dev/null \
+            | grep -v "/medidores.conf$" || true)"
+[ -z "$OCUPADO" ] || fallo "El puerto $PUERTO ya lo usa otra configuración de Apache: $OCUPADO. Use --puerto con otro número."
+if [ ! -e /etc/apache2/sites-enabled/medidores.conf ] && command -v ss >/dev/null \
+   && ss -ltnH "sport = :$PUERTO" 2>/dev/null | grep -q .; then
+  fallo "El puerto $PUERTO ya está en uso por otro programa: $(ss -ltnpH "sport = :$PUERTO" | head -1). Use --puerto."
+fi
+if [ "$CONF_NUEVA" -eq 1 ] && command -v psql >/dev/null; then
+  systemctl start postgresql 2>/dev/null || service postgresql start >/dev/null 2>&1 || true
+  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$DB_USUARIO'" 2>/dev/null | grep -q 1; then
+    fallo "Ya existe el usuario de PostgreSQL '$DB_USUARIO' (¿de otro sitio?). No se modifica. Use DB_USUARIO=otro_nombre."
+  fi
+  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NOMBRE'" 2>/dev/null | grep -q 1; then
+    fallo "Ya existe la base de datos '$DB_NOMBRE' (¿de otro sitio?). No se modifica. Use DB_NOMBRE=otro_nombre."
+  fi
+fi
+ok "Puerto $PUERTO, archivo de Apache y base '$DB_NOMBRE' / usuario '$DB_USUARIO' libres o propios"
+
 # ---------------------------------------------------------------- configuración
 paso "Configuración ($CONF)"
 if [ -f "$CONF" ]; then
@@ -96,16 +133,15 @@ if [ -f "$CONF" ]; then
   TOKEN="$(php -r '$c = require $argv[1]; echo $c["ingest_token"];' "$CONF")"
   [ "$DB_CLAVE" != "CAMBIAR" ] && [ "$TOKEN" != "CAMBIAR" ] || fallo "config.php tiene valores CAMBIAR: complételo o bórrelo para regenerarlo."
   ok "Se conserva la configuración existente"
-  RUTA_CONF="$(php -r '$c = require $argv[1]; echo $c["ruta_base"] ?? "";' "$CONF")"
-  [ "$RUTA_CONF" = "$RUTA" ] || aviso "config.php tiene ruta_base='$RUTA_CONF' y se publica en $RUTA: ajuste ruta_base (cookie de sesión)."
+  DB_USUARIO="$(php -r '$c = require $argv[1]; echo $c["db"]["usuario"];' "$CONF")"
+  DB_NOMBRE="$(php -r '$c = require $argv[1]; preg_match("/dbname=([^;]+)/", $c["db"]["dsn"], $m); echo $m[1] ?? "";' "$CONF")"
 else
   DB_CLAVE="$(php -r 'echo bin2hex(random_bytes(18));')"
   TOKEN="$(php -r 'echo bin2hex(random_bytes(24));')"
-  sed -e "s|'dsn'      => 'pgsql:host=127.0.0.1;port=5432;dbname=monitor'|'dsn'      => 'pgsql:host=127.0.0.1;port=5432;dbname=$DB_NOMBRE'|" \
-      -e "s|'usuario'  => 'monitor'|'usuario'  => '$DB_USUARIO'|" \
+  sed -e "s|dbname=medidores'|dbname=$DB_NOMBRE'|" \
+      -e "s|'usuario'  => 'medidores'|'usuario'  => '$DB_USUARIO'|" \
       -e "s|'clave'    => 'CAMBIAR'|'clave'    => '$DB_CLAVE'|" \
       -e "s|'ingest_token' => 'CAMBIAR'|'ingest_token' => '$TOKEN'|" \
-      -e "s|'ruta_base' => '/monitor'|'ruta_base' => '$RUTA'|" \
       "$APP/config/config.example.php" > "$CONF"
   ok "Creado con contraseña de BD y token de ingesta aleatorios"
 fi
@@ -142,49 +178,59 @@ fi
 
 # ---------------------------------------------------------------- Apache
 paso "Apache ($CONF_APACHE)"
-# Restos de la versión anterior del instalador (VirtualHost propio): se retiran.
-if [ -f /etc/apache2/sites-available/monitor.conf ] && grep -q "DocumentRoot $APP/public" /etc/apache2/sites-available/monitor.conf; then
-  a2dissite -q monitor >/dev/null 2>&1 || true
-  rm -f /etc/apache2/sites-available/monitor.conf
-  aviso "Se retiró el VirtualHost 'monitor' de una instalación anterior"
+SED=(-e "s|8450|$PUERTO|g" -e "s|ServerName dev.minkafab.com|ServerName $DOMINIO|" -e "s|/var/www/medidores|$APP|g")
+if [ "$ESQUEMA" = https ]; then
+  SED+=(-e "s|^\([[:space:]]*\)#SSL |\1|" -e "s|__CERT__|$CERT|" -e "s|__KEY__|$KEY|")
+  a2enmod -q ssl >/dev/null
+  ok "HTTPS con $CERT"
+else
+  SED+=(-e "/#SSL /d")
+  aviso "Sin certificado en $CERT: el sitio queda en HTTP. Para HTTPS indique CERT=... KEY=... y vuelva a ejecutar."
 fi
-# "port 80 namevhost dominio (...)", "alias dominio" o, con un solo VirtualHost por puerto, "*:80   dominio (...)"
-apache2ctl -S 2>/dev/null | grep -qE "(namevhost|alias|^[^ ]+:[0-9]+) +${DOMINIO//./\\.}( |$)" \
-  || aviso "Apache no tiene un VirtualHost para $DOMINIO; $RUTA/ quedará disponible en el sitio por defecto."
-sed -e "s|Alias /monitor |Alias $RUTA |" -e "s|ProxyPass /monitor !|ProxyPass $RUTA !|" -e "s|/var/www/monitor|$APP|g" \
-    "$APP/deploy/apache-monitor.conf" > "$CONF_APACHE"
-a2enmod -q alias headers >/dev/null
-a2enconf -q monitor >/dev/null
-apache2ctl configtest 2>&1 | grep -q 'Syntax OK' || { apache2ctl configtest; fallo "Error en la configuración de Apache."; }
-recargar_apache
-ok "Alias $RUTA -> $APP/public habilitado y Apache recargado"
+sed "${SED[@]}" "$APP/deploy/apache-medidores.conf" > "$CONF_APACHE"
+a2enmod -q headers >/dev/null
+a2ensite -q medidores >/dev/null
+if ! apache2ctl configtest 2>&1 | grep -q 'Syntax OK'; then
+  apache2ctl configtest || true
+  a2dissite -q medidores >/dev/null
+  fallo "Error en la configuración de Apache: se deshabilitó el sitio medidores para no afectar a los demás."
+fi
+# Un Listen nuevo requiere reinicio completo (graceful no abre puertos nuevos de forma fiable).
+if ss -ltnH "sport = :$PUERTO" 2>/dev/null | grep -q .; then recargar_apache
+else systemctl restart apache2 2>/dev/null || apache2ctl restart; fi
+ok "Sitio habilitado en el puerto $PUERTO"
+
+if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+  ufw allow "$PUERTO/tcp" >/dev/null && ok "Firewall (ufw): puerto $PUERTO/tcp abierto"
+else
+  aviso "ufw no está activo: si hay otro firewall (p. ej. el de Hetzner), abra el puerto $PUERTO/tcp."
+fi
 
 # ---------------------------------------------------------------- comprobaciones
 paso "Comprobaciones"
-# Se prueba por dónde llegan los receptores al endpoint de ingesta: el VirtualHost HTTP puede
-# redirigir a HTTPS (certbot --redirect), y una redirección haría perder el POST.
-INGEST_URL=""; INGEST_HOST=""
-for cand in "http://127.0.0.1$RUTA|" "http://127.0.0.1$RUTA|$DOMINIO" "https://$DOMINIO$RUTA|"; do
-  url="${cand%%|*}"; host="${cand#*|}"
-  RESP="$(curl -s --max-time 8 ${host:+-H "Host: $host"} -H "X-Ingest-Token: $TOKEN" -d '{}' "$url/api/ingest.php" || true)"
-  if [ "$RESP" = '{"ok":true}' ]; then INGEST_URL="$url/api/ingest.php"; INGEST_HOST="$host"; break; fi
-done
-if [ -n "$INGEST_URL" ]; then
-  ok "api/ingest.php acepta el token en $INGEST_URL${INGEST_HOST:+ (Host: $INGEST_HOST)}"
+# Los receptores llegan por 127.0.0.1. Con HTTPS, la cabecera Host (INGEST_HOST) hace que Node
+# valide el certificado contra el dominio aunque conecte a 127.0.0.1.
+CURL_LOCAL=(--resolve "$DOMINIO:$PUERTO:127.0.0.1")
+if [ "$ESQUEMA" = https ]; then
+  INGEST_URL="https://127.0.0.1:$PUERTO/api/ingest.php"; INGEST_HOST="$DOMINIO"
 else
-  aviso "api/ingest.php no respondió como se esperaba (última respuesta: ${RESP:-sin respuesta}). Revise /var/log/apache2/error.log"
+  INGEST_URL="http://127.0.0.1:$PUERTO/api/ingest.php"; INGEST_HOST=""
 fi
-SITIO_URL=""
-for url in "https://$DOMINIO$RUTA" "http://$DOMINIO$RUTA"; do
-  COD="$(curl -s --max-time 8 -o /dev/null -w '%{http_code}' "$url/login.php" || true)"
-  if [ "$COD" = "200" ]; then SITIO_URL="$url/"; break; fi
+# Apache puede tardar unos segundos en abrir el puerto tras el reinicio.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  RESP="$(curl -s --noproxy "*" --max-time 8 "${CURL_LOCAL[@]}" -H "X-Ingest-Token: $TOKEN" -d '{}' "$ESQUEMA://$DOMINIO:$PUERTO/api/ingest.php" || true)"
+  [ "$RESP" = '{"ok":true}' ] && break
+  sleep 1
 done
-if [ -n "$SITIO_URL" ]; then
-  ok "$SITIO_URL"login.php responde 200
+if [ "$RESP" = '{"ok":true}' ]; then
+  ok "api/ingest.php acepta el token"
 else
-  COD="$(curl -s --max-time 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1$RUTA/login.php" || true)"
-  aviso "No se pudo abrir https://$DOMINIO$RUTA/login.php desde el servidor (local: HTTP $COD). ¿DNS o ProxyPass del sitio principal?"
+  aviso "api/ingest.php respondió: ${RESP:-sin respuesta}. Revise /var/log/apache2/medidores_error.log"
+  INGEST_URL=""
 fi
+COD="$(curl -s --noproxy "*" --max-time 8 "${CURL_LOCAL[@]}" -o /dev/null -w '%{http_code}' "$ESQUEMA://$DOMINIO:$PUERTO/login.php" || true)"
+[ "$COD" = "200" ] && ok "${URL_SITIO}login.php responde 200 (desde el servidor)" \
+  || aviso "login.php respondió $COD. Revise /var/log/apache2/medidores_error.log"
 
 # ---------------------------------------------------------------- receptores (pm2)
 # Devuelve "cwd␞args (separados por \x1f)␞FORWARD_DOWNLINK␞WATER_DOWNLINK_ID" del proceso pm2 (␞ = \x1e).
@@ -232,5 +278,5 @@ else
 fi
 
 paso "Listo"
-echo "   Sitio: ${SITIO_URL:-https://$DOMINIO$RUTA/}"
+echo "   Sitio: $URL_SITIO   (si no abre desde fuera, revise el firewall del puerto $PUERTO)"
 echo "   Para actualizar: cd $APP && sudo git pull && sudo bash deploy/instalar.sh --receptores"

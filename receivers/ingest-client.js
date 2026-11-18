@@ -2,7 +2,7 @@
 // Variables de entorno:
 //   INGEST_URL   (por defecto http://127.0.0.1/api/ingest.php)
 //   INGEST_TOKEN (obligatorio; igual a 'ingest_token' en config/config.php)
-//   INGEST_HOST  (opcional; cabecera Host si Apache usa VirtualHost por nombre, p. ej. monitor.minkafab.com)
+//   INGEST_HOST  (opcional; cabecera Host si Apache usa VirtualHost por nombre, p. ej. dev.minkafab.com)
 const URL_INGEST = process.env.INGEST_URL || 'http://127.0.0.1/api/ingest.php';
 const TOKEN = process.env.INGEST_TOKEN || '';
 const HOST = process.env.INGEST_HOST || '';

@@ -2,14 +2,14 @@
 // Copiar a config/config.php y ajustar. config.php NO se sube al repositorio.
 return [
     'db' => [
-        'dsn'      => 'pgsql:host=127.0.0.1;port=5432;dbname=monitor',
-        'usuario'  => 'monitor',
+        'dsn'      => 'pgsql:host=127.0.0.1;port=5432;dbname=medidores',
+        'usuario'  => 'medidores',
         'clave'    => 'CAMBIAR',
     ],
     'zona_horaria' => 'America/Bogota',
-    'nombre_sitio' => 'Monitor Minkafab',
-    // Ruta bajo la que Apache publica el sitio (Alias). '' si está en la raíz de un dominio.
-    'ruta_base' => '/monitor',
+    'nombre_sitio' => 'Medidores Minkafab',
+    // Ruta bajo la que se publica el sitio, para la cookie de sesión. '' = raíz (VirtualHost propio).
+    'ruta_base' => '',
 
     // Token compartido con los receptores Node (cabecera X-Ingest-Token).
     // Generar con: php -r 'echo bin2hex(random_bytes(24)), "\n";'

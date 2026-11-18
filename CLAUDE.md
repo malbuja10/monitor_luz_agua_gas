@@ -7,9 +7,10 @@ Responde en español.
 Sitio web de monitoreo (energía, agua, gas) + receptores Node de los medidores inteligentes Zhongyi
 (energía DTSZY06 y agua ultrasónicos ZYsmart) que reportan a nuestro servidor propio. Ver README.md.
 
-- Web: Ubuntu + Apache2 + PHP 8 (sin frameworks) + PostgreSQL. Publicado en https://dev.minkafab.com/monitor/
-  (Alias de Apache a `public/`, ver `deploy/`). Enlaces y redirecciones siempre relativos; `ruta_base` en config.
-- Instalar/actualizar: `sudo bash deploy/instalar.sh --receptores` (idempotente).
+- Web: Ubuntu + Apache2 + PHP 8 (sin frameworks) + PostgreSQL. Publicado en https://dev.minkafab.com:8450/
+  (VirtualHost propio `sites-available/medidores.conf`, código en `/var/www/medidores`, base y usuario `medidores`).
+  En el mismo servidor hay otro sitio (monitoreo de dispositivos, puerto 8445): no tocar sus recursos.
+- Instalar/actualizar: `sudo bash deploy/instalar.sh --receptores` (idempotente; se detiene ante conflictos).
 - `src/ingesta.php` es la única puerta de entrada de datos: los receptores Node hacen POST a
   `public/api/ingest.php` (localhost + token) y reciben los comandos en cola en la respuesta.
 - Acciones de comando genéricas: `conectar` (abrir válvula / reconectar relé), `cortar`, `consultar`, `ciclo`.

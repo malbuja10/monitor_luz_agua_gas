@@ -1,5 +1,5 @@
--- Esquema PostgreSQL — Monitor de medidores (energía, agua, gas)
--- Uso: psql -U monitor -d monitor -f sql/schema.sql
+-- Esquema PostgreSQL — Plataforma de medidores (energía, agua, gas)
+-- Uso: psql -h 127.0.0.1 -U medidores -d medidores -f sql/schema.sql
 
 BEGIN;
 

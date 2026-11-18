@@ -6,7 +6,7 @@ const ROLES = ['lector' => 1, 'operador' => 2, 'admin' => 3];
 function iniciar_sesion(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) return;
-    session_name('monitor_sid');
+    session_name('medidores_sid');
     session_set_cookie_params([
         'lifetime' => 0,
         'path'     => rtrim((string) config('ruta_base', ''), '/') . '/',
