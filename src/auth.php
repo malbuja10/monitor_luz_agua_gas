@@ -9,7 +9,7 @@ function iniciar_sesion(): void
     session_name('monitor_sid');
     session_set_cookie_params([
         'lifetime' => 0,
-        'path'     => '/',
+        'path'     => rtrim((string) config('ruta_base', ''), '/') . '/',
         'secure'   => !empty($_SERVER['HTTPS']),
         'httponly' => true,
         'samesite' => 'Lax',
@@ -35,7 +35,9 @@ function requerir(string $rol = 'lector', bool $api = false): array
     $u = usuario();
     if (!$u) {
         if ($api) json_out(['error' => 'no autenticado'], 401);
-        redirigir('login.php?volver=' . urlencode($_SERVER['REQUEST_URI'] ?? ''));
+        $volver = basename($_SERVER['SCRIPT_NAME'] ?? 'index.php')
+                . (($_SERVER['QUERY_STRING'] ?? '') !== '' ? '?' . $_SERVER['QUERY_STRING'] : '');
+        redirigir('login.php?volver=' . urlencode($volver));
     }
     if (!puede($rol)) {
         if ($api) json_out(['error' => 'sin permiso'], 403);

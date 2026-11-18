@@ -5,7 +5,7 @@ iniciar_sesion();
 
 $volver = $_GET['volver'] ?? $_POST['volver'] ?? 'index.php';
 // Solo rutas locales relativas (evita redirecciones abiertas).
-if (!is_string($volver) || !preg_match('#^/?[a-z_]+\.php(\?[^\s]*)?$#i', $volver)) $volver = 'index.php';
+if (!is_string($volver) || !preg_match('#^[a-z_]+\.php(\?[^\s]*)?$#i', $volver)) $volver = 'index.php';
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

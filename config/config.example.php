@@ -8,6 +8,8 @@ return [
     ],
     'zona_horaria' => 'America/Bogota',
     'nombre_sitio' => 'Monitor Minkafab',
+    // Ruta bajo la que Apache publica el sitio (Alias). '' si está en la raíz de un dominio.
+    'ruta_base' => '/monitor',
 
     // Token compartido con los receptores Node (cabecera X-Ingest-Token).
     // Generar con: php -r 'echo bin2hex(random_bytes(24)), "\n";'

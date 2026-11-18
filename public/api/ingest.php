@@ -6,7 +6,9 @@ declare(strict_types=1);
 require __DIR__ . '/../../src/bootstrap.php';
 require __DIR__ . '/../../src/ingesta.php';
 
-if (!in_array(ip_cliente(), config('ingest_ips', []), true)) json_out(['error' => 'ip no autorizada'], 403);
+// Local: IP en la lista, o petición del propio servidor a su IP pública (p. ej. vía https://dominio/...).
+$local = in_array(ip_cliente(), config('ingest_ips', []), true) || ip_cliente() === ($_SERVER['SERVER_ADDR'] ?? '-');
+if (!$local) json_out(['error' => 'ip no autorizada'], 403);
 $tok = $_SERVER['HTTP_X_INGEST_TOKEN'] ?? '';
 if (config('ingest_token') === 'CAMBIAR' || !hash_equals((string) config('ingest_token'), $tok)) {
     json_out(['error' => 'token inválido'], 403);

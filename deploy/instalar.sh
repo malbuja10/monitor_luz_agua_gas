@@ -3,28 +3,32 @@
 # Se puede ejecutar varias veces: no borra datos ni cambia contraseñas existentes.
 #
 # Uso (desde el clon del repositorio, p. ej. /var/www/monitor):
-#   sudo bash deploy/instalar.sh [--dominio monitor.minkafab.com] [--receptores] [--https] [--sin-apt]
+#   sudo bash deploy/instalar.sh [--receptores] [--dominio dev.minkafab.com] [--ruta /monitor] [--sin-apt]
 #
-#   --dominio X    ServerName del sitio (por defecto monitor.minkafab.com; el DNS debe apuntar al servidor)
+# El sitio se publica como subcarpeta (Alias de Apache) del sitio existente: https://dev.minkafab.com/monitor/
+# Usa el VirtualHost y el certificado HTTPS que ya tenga ese dominio; no crea VirtualHost propio.
+#
+#   --dominio X    dominio ya servido por Apache en este servidor (por defecto dev.minkafab.com)
+#   --ruta /X      subcarpeta donde se publica (por defecto /monitor)
 #   --receptores   reinicia en pm2 los receptores de energía y agua desde este repositorio, con el token
 #                  de ingesta. Conserva carpeta de trabajo, argumentos (puerto, réplica a Zhongyi) y
 #                  variables FORWARD_DOWNLINK / WATER_DOWNLINK_ID de los procesos actuales.
-#   --https        obtiene el certificado con certbot (requiere DNS ya apuntando al servidor)
 #   --sin-apt      no instala paquetes
 #
 # Variables opcionales: PM2_ENERGIA (zy-receiver), PM2_AGUA (zy-water-udp), DB_NOMBRE (monitor),
 #                       DB_USUARIO (monitor), DIR_LOGS (/var/lib/monitor, solo si el proceso no existía).
 set -euo pipefail
 
-DOMINIO="monitor.minkafab.com"
-RECEPTORES=0; HTTPS=0; APT=1
+DOMINIO="dev.minkafab.com"
+RUTA="/monitor"
+RECEPTORES=0; APT=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --dominio) DOMINIO="${2:?falta el dominio}"; shift 2 ;;
     --receptores) RECEPTORES=1; shift ;;
-    --https) HTTPS=1; shift ;;
+    --ruta) RUTA="/${2#/}"; RUTA="${RUTA%/}"; shift 2 ;;
     --sin-apt) APT=0; shift ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "Opción desconocida: $1" >&2; exit 1 ;;
   esac
 done
@@ -36,7 +40,7 @@ DB_NOMBRE="${DB_NOMBRE:-monitor}"
 DB_USUARIO="${DB_USUARIO:-monitor}"
 DIR_LOGS="${DIR_LOGS:-/var/lib/monitor}"
 CONF="$APP/config/config.php"
-SITIO=/etc/apache2/sites-available/monitor.conf
+CONF_APACHE=/etc/apache2/conf-available/monitor.conf
 
 paso() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
 ok()   { printf '   \033[32m✔\033[0m %s\n' "$*"; }
@@ -47,7 +51,8 @@ recargar_apache() { systemctl reload apache2 2>/dev/null || apache2ctl graceful;
 [ "$(id -u)" -eq 0 ] || fallo "Ejecutar con sudo."
 [ -f "$APP/public/index.php" ] && [ -f "$APP/sql/schema.sql" ] || fallo "No encuentro el sitio en $APP."
 grep -qi ubuntu /etc/os-release || aviso "No parece Ubuntu; se continúa igual."
-echo "Aplicación: $APP · Dominio: $DOMINIO"
+[[ "$RUTA" =~ ^/[A-Za-z0-9._-]+$ ]] || fallo "Ruta inválida: $RUTA (ejemplo: /monitor)."
+echo "Aplicación: $APP · Publicación: $DOMINIO$RUTA/"
 
 # ---------------------------------------------------------------- paquetes
 paso "Paquetes"
@@ -91,6 +96,8 @@ if [ -f "$CONF" ]; then
   TOKEN="$(php -r '$c = require $argv[1]; echo $c["ingest_token"];' "$CONF")"
   [ "$DB_CLAVE" != "CAMBIAR" ] && [ "$TOKEN" != "CAMBIAR" ] || fallo "config.php tiene valores CAMBIAR: complételo o bórrelo para regenerarlo."
   ok "Se conserva la configuración existente"
+  RUTA_CONF="$(php -r '$c = require $argv[1]; echo $c["ruta_base"] ?? "";' "$CONF")"
+  [ "$RUTA_CONF" = "$RUTA" ] || aviso "config.php tiene ruta_base='$RUTA_CONF' y se publica en $RUTA: ajuste ruta_base (cookie de sesión)."
 else
   DB_CLAVE="$(php -r 'echo bin2hex(random_bytes(18));')"
   TOKEN="$(php -r 'echo bin2hex(random_bytes(24));')"
@@ -98,6 +105,7 @@ else
       -e "s|'usuario'  => 'monitor'|'usuario'  => '$DB_USUARIO'|" \
       -e "s|'clave'    => 'CAMBIAR'|'clave'    => '$DB_CLAVE'|" \
       -e "s|'ingest_token' => 'CAMBIAR'|'ingest_token' => '$TOKEN'|" \
+      -e "s|'ruta_base' => '/monitor'|'ruta_base' => '$RUTA'|" \
       "$APP/config/config.example.php" > "$CONF"
   ok "Creado con contraseña de BD y token de ingesta aleatorios"
 fi
@@ -133,41 +141,50 @@ else
 fi
 
 # ---------------------------------------------------------------- Apache
-paso "Apache ($SITIO)"
-if apache2ctl -S 2>/dev/null | grep -E "(namevhost|alias) $DOMINIO( |$)" | grep -vq "sites-enabled/monitor.conf"; then
-  fallo "El dominio $DOMINIO ya lo usa otro sitio de Apache. Use --dominio con otro nombre (p. ej. monitor.minkafab.com)."
+paso "Apache ($CONF_APACHE)"
+# Restos de la versión anterior del instalador (VirtualHost propio): se retiran.
+if [ -f /etc/apache2/sites-available/monitor.conf ] && grep -q "DocumentRoot $APP/public" /etc/apache2/sites-available/monitor.conf; then
+  a2dissite -q monitor >/dev/null 2>&1 || true
+  rm -f /etc/apache2/sites-available/monitor.conf
+  aviso "Se retiró el VirtualHost 'monitor' de una instalación anterior"
 fi
-sed -e "s|ServerName monitor.minkafab.com|ServerName $DOMINIO|" \
-    -e "s|/var/www/monitor|$APP|g" \
-    "$APP/deploy/apache-monitor.conf" > "$SITIO.nuevo"
-if [ -f "$SITIO" ] && grep -q 'SSLCertificateFile\|Include /etc/letsencrypt' "$SITIO"; then
-  rm -f "$SITIO.nuevo"   # certbot lo modificó; no se sobrescribe
-  ok "Sitio existente con HTTPS: se conserva"
-else
-  mv "$SITIO.nuevo" "$SITIO"
-fi
-a2enmod -q headers >/dev/null
-a2ensite -q monitor >/dev/null
+# "port 80 namevhost dominio (...)", "alias dominio" o, con un solo VirtualHost por puerto, "*:80   dominio (...)"
+apache2ctl -S 2>/dev/null | grep -qE "(namevhost|alias|^[^ ]+:[0-9]+) +${DOMINIO//./\\.}( |$)" \
+  || aviso "Apache no tiene un VirtualHost para $DOMINIO; $RUTA/ quedará disponible en el sitio por defecto."
+sed -e "s|Alias /monitor |Alias $RUTA |" -e "s|ProxyPass /monitor !|ProxyPass $RUTA !|" -e "s|/var/www/monitor|$APP|g" \
+    "$APP/deploy/apache-monitor.conf" > "$CONF_APACHE"
+a2enmod -q alias headers >/dev/null
+a2enconf -q monitor >/dev/null
 apache2ctl configtest 2>&1 | grep -q 'Syntax OK' || { apache2ctl configtest; fallo "Error en la configuración de Apache."; }
 recargar_apache
-ok "Sitio habilitado y Apache recargado"
-
-if [ "$HTTPS" -eq 1 ]; then
-  paso "HTTPS"
-  if command -v certbot >/dev/null; then
-    certbot --apache -d "$DOMINIO" --non-interactive --agree-tos --redirect --register-unsafely-without-email \
-      && ok "Certificado instalado" || aviso "certbot falló (¿el DNS de $DOMINIO apunta a este servidor?)"
-  else
-    aviso "certbot no está instalado: sudo apt install certbot python3-certbot-apache"
-  fi
-fi
+ok "Alias $RUTA -> $APP/public habilitado y Apache recargado"
 
 # ---------------------------------------------------------------- comprobaciones
 paso "Comprobaciones"
-COD="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $DOMINIO" http://127.0.0.1/login.php || true)"
-[ "$COD" = "200" ] && ok "login.php responde 200" || aviso "login.php respondió $COD (revise /var/log/apache2/monitor_error.log)"
-RESP="$(curl -s -H "Host: $DOMINIO" -H "X-Ingest-Token: $TOKEN" -d '{}' http://127.0.0.1/api/ingest.php || true)"
-[ "$RESP" = '{"ok":true}' ] && ok "api/ingest.php acepta el token" || aviso "api/ingest.php respondió: $RESP"
+# Se prueba por dónde llegan los receptores al endpoint de ingesta: el VirtualHost HTTP puede
+# redirigir a HTTPS (certbot --redirect), y una redirección haría perder el POST.
+INGEST_URL=""; INGEST_HOST=""
+for cand in "http://127.0.0.1$RUTA|" "http://127.0.0.1$RUTA|$DOMINIO" "https://$DOMINIO$RUTA|"; do
+  url="${cand%%|*}"; host="${cand#*|}"
+  RESP="$(curl -s --max-time 8 ${host:+-H "Host: $host"} -H "X-Ingest-Token: $TOKEN" -d '{}' "$url/api/ingest.php" || true)"
+  if [ "$RESP" = '{"ok":true}' ]; then INGEST_URL="$url/api/ingest.php"; INGEST_HOST="$host"; break; fi
+done
+if [ -n "$INGEST_URL" ]; then
+  ok "api/ingest.php acepta el token en $INGEST_URL${INGEST_HOST:+ (Host: $INGEST_HOST)}"
+else
+  aviso "api/ingest.php no respondió como se esperaba (última respuesta: ${RESP:-sin respuesta}). Revise /var/log/apache2/error.log"
+fi
+SITIO_URL=""
+for url in "https://$DOMINIO$RUTA" "http://$DOMINIO$RUTA"; do
+  COD="$(curl -s --max-time 8 -o /dev/null -w '%{http_code}' "$url/login.php" || true)"
+  if [ "$COD" = "200" ]; then SITIO_URL="$url/"; break; fi
+done
+if [ -n "$SITIO_URL" ]; then
+  ok "$SITIO_URL"login.php responde 200
+else
+  COD="$(curl -s --max-time 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1$RUTA/login.php" || true)"
+  aviso "No se pudo abrir https://$DOMINIO$RUTA/login.php desde el servidor (local: HTTP $COD). ¿DNS o ProxyPass del sitio principal?"
+fi
 
 # ---------------------------------------------------------------- receptores (pm2)
 # Devuelve "cwd␞args (separados por \x1f)␞FORWARD_DOWNLINK␞WATER_DOWNLINK_ID" del proceso pm2 (␞ = \x1e).
@@ -193,7 +210,7 @@ reiniciar() { # nombre script args_por_defecto...
     cwd="$DIR_LOGS"; ARGS=("$@"); fwd=""; wid=""
     mkdir -p "$cwd"
   fi
-  env INGEST_TOKEN="$TOKEN" INGEST_URL="http://127.0.0.1/api/ingest.php" INGEST_HOST="$DOMINIO" \
+  env INGEST_TOKEN="$TOKEN" INGEST_URL="$INGEST_URL" ${INGEST_HOST:+INGEST_HOST="$INGEST_HOST"} \
       ${fwd:+FORWARD_DOWNLINK="$fwd"} ${wid:+WATER_DOWNLINK_ID="$wid"} \
       pm2 start "$APP/receivers/$script" --name "$nombre" --cwd "$cwd" -- "${ARGS[@]}" >/dev/null
   ok "$nombre: $script ${ARGS[*]} (carpeta $cwd)"
@@ -202,6 +219,7 @@ reiniciar() { # nombre script args_por_defecto...
 if [ "$RECEPTORES" -eq 1 ]; then
   paso "Receptores pm2"
   command -v node >/dev/null && command -v pm2 >/dev/null || fallo "Faltan node o pm2."
+  [ -n "$INGEST_URL" ] || fallo "No se reinician los receptores: el endpoint de ingesta no responde (ver avisos)."
   node -e 'process.exit(+process.versions.node.split(".")[0] >= 18 ? 0 : 1)' || fallo "Se necesita Node 18 o superior."
   reiniciar "$PM2_ENERGIA" zy-receiver.js 10091
   reiniciar "$PM2_AGUA" zy-water-udp.js 10091 zy-water.jsonl
@@ -214,6 +232,5 @@ else
 fi
 
 paso "Listo"
-if [ "$HTTPS" -eq 1 ]; then echo "   Sitio: https://$DOMINIO/"; else
-  echo "   Sitio: http://$DOMINIO/   (HTTPS: sudo bash deploy/instalar.sh --dominio $DOMINIO --https)"; fi
-echo "   Para actualizar: cd $APP && sudo git pull && sudo bash deploy/instalar.sh --dominio $DOMINIO"
+echo "   Sitio: ${SITIO_URL:-https://$DOMINIO$RUTA/}"
+echo "   Para actualizar: cd $APP && sudo git pull && sudo bash deploy/instalar.sh --receptores"

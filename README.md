@@ -21,26 +21,30 @@ medidor ──UDP/TCP──► receivers/*.js ──HTTP local──► public/a
 | `deploy/apache-monitor.conf` | VirtualHost de ejemplo |
 
 ## Instalación en dev.minkafab.com
-Requisitos previos: un registro DNS para el sitio (por defecto `monitor.minkafab.com`) apuntando a 135.181.100.95,
-y Node 18+ con pm2 (ya existentes en el servidor).
+El sitio se publica en **https://dev.minkafab.com/monitor/** como subcarpeta del sitio existente
+(`Alias` de Apache en `conf-available/monitor.conf`): usa su VirtualHost y su certificado, sin DNS ni VirtualHost nuevos.
+Requisitos previos en el servidor: Node 18+ con pm2 (ya existentes).
 ```bash
 sudo git clone https://github.com/malbuja10/monitor_luz_agua_gas /var/www/monitor
 cd /var/www/monitor
-sudo bash deploy/instalar.sh --dominio monitor.minkafab.com --receptores
-sudo bash deploy/instalar.sh --dominio monitor.minkafab.com --https     # cuando el DNS ya resuelva
+sudo bash deploy/instalar.sh --receptores
 ```
 `deploy/instalar.sh` se puede ejecutar todas las veces que haga falta (no borra datos ni cambia claves):
 1. Instala los paquetes que falten (`apache2`, `postgresql`, `php-cli`, `php-pgsql`, `curl`) y verifica PHP ≥ 8.1.
 2. Crea `config/config.php` con contraseña de BD y token de ingesta aleatorios (si ya existe, lo conserva).
 3. Crea el rol y la base `monitor`, aplica `sql/schema.sql` y `sql/seed.sql`.
 4. Si no hay usuarios, pide la contraseña del administrador `admin`.
-5. Instala el VirtualHost (`deploy/apache-monitor.conf`), aborta si el dominio ya lo usa otro sitio, y recarga Apache.
-6. Comprueba que `login.php` y `api/ingest.php` respondan.
+5. Instala y habilita el Alias `/monitor` (`deploy/apache-monitor.conf`) y recarga Apache.
+6. Busca por dónde responde `api/ingest.php` (HTTP local o, si HTTP redirige a HTTPS, `https://dev.minkafab.com/monitor`)
+   y comprueba que `login.php` abra.
 7. Con `--receptores`: reinicia en pm2 `zy-receiver` y `zy-water-udp` desde `receivers/`, conservando su
    carpeta de trabajo, argumentos (puerto, réplica a Zhongyi) y `FORWARD_DOWNLINK`/`WATER_DOWNLINK_ID`, y añade
-   el token de ingesta. Otros nombres de proceso: `PM2_ENERGIA=... PM2_AGUA=... sudo -E bash deploy/instalar.sh ...`
+   el token y la URL de ingesta. Si la ingesta no responde, no los toca.
+   Otros nombres de proceso: `PM2_ENERGIA=... PM2_AGUA=... sudo -E bash deploy/instalar.sh ...`
 
-Actualizar: `cd /var/www/monitor && sudo git pull && sudo bash deploy/instalar.sh --dominio monitor.minkafab.com --receptores`
+Opciones: `--dominio` (por defecto `dev.minkafab.com`), `--ruta` (por defecto `/monitor`), `--sin-apt`.
+
+Actualizar: `cd /var/www/monitor && sudo git pull && sudo bash deploy/instalar.sh --receptores`
 
 ### Instalación manual (referencia)
 Lo que hace el script, paso a paso, por si se prefiere a mano:
@@ -63,19 +67,19 @@ sudo chown root:www-data config/config.php && sudo chmod 640 config/config.php
 php scripts/crear_usuario.php admin admin "Administrador"
 
 # Apache
-sudo cp deploy/apache-monitor.conf /etc/apache2/sites-available/monitor.conf   # ajustar ServerName
-sudo a2enmod headers && sudo a2ensite monitor && sudo systemctl reload apache2
+sudo cp deploy/apache-monitor.conf /etc/apache2/conf-available/monitor.conf
+sudo a2enmod alias headers && sudo a2enconf monitor && sudo systemctl reload apache2
 ```
 
 ### Receptor de agua con ingesta
 Reemplaza al `zy-water-udp.js` actual (mismo decodificador, mismo `.jsonl`, más ingesta y cola de comandos):
 ```bash
 pm2 delete zy-water-udp
-INGEST_TOKEN=<token> INGEST_URL=http://127.0.0.1/api/ingest.php INGEST_HOST=monitor.minkafab.com \
+INGEST_TOKEN=<token> INGEST_URL=https://dev.minkafab.com/monitor/api/ingest.php \
   pm2 start /var/www/monitor/receivers/zy-water-udp.js --name zy-water-udp -- 10091 /root/zy-water.jsonl
 pm2 save
 ```
-`INGEST_HOST` hace falta si Apache sirve el sitio con un VirtualHost por nombre. Con `WATER_DOWNLINK_ID=1` las
+Con `WATER_DOWNLINK_ID=1` las
 tramas de bajada llevan delante el ID de 8 B (pendiente confirmar con Zhongyi cuál formato acepta el medidor).
 
 ### Receptor de energía con ingesta
@@ -84,7 +88,7 @@ consola) más el envío al sitio. Sin `INGEST_TOKEN` funciona exactamente como a
 ```bash
 pm2 delete zy-receiver
 cd /root   # carpeta donde se escribe zy-raw.log
-INGEST_TOKEN=<token> INGEST_URL=http://127.0.0.1/api/ingest.php INGEST_HOST=monitor.minkafab.com \
+INGEST_TOKEN=<token> INGEST_URL=https://dev.minkafab.com/monitor/api/ingest.php \
   pm2 start /var/www/monitor/receivers/zy-receiver.js --name zy-receiver -- 10091 udp:58.215.245.18:20131
 pm2 save
 ```
