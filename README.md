@@ -21,6 +21,29 @@ medidor ──UDP/TCP──► receivers/*.js ──HTTP local──► public/a
 | `deploy/apache-monitor.conf` | VirtualHost de ejemplo |
 
 ## Instalación en dev.minkafab.com
+Requisitos previos: un registro DNS para el sitio (por defecto `monitor.minkafab.com`) apuntando a 135.181.100.95,
+y Node 18+ con pm2 (ya existentes en el servidor).
+```bash
+sudo git clone https://github.com/malbuja10/monitor_luz_agua_gas /var/www/monitor
+cd /var/www/monitor
+sudo bash deploy/instalar.sh --dominio monitor.minkafab.com --receptores
+sudo bash deploy/instalar.sh --dominio monitor.minkafab.com --https     # cuando el DNS ya resuelva
+```
+`deploy/instalar.sh` se puede ejecutar todas las veces que haga falta (no borra datos ni cambia claves):
+1. Instala los paquetes que falten (`apache2`, `postgresql`, `php-cli`, `php-pgsql`, `curl`) y verifica PHP ≥ 8.1.
+2. Crea `config/config.php` con contraseña de BD y token de ingesta aleatorios (si ya existe, lo conserva).
+3. Crea el rol y la base `monitor`, aplica `sql/schema.sql` y `sql/seed.sql`.
+4. Si no hay usuarios, pide la contraseña del administrador `admin`.
+5. Instala el VirtualHost (`deploy/apache-monitor.conf`), aborta si el dominio ya lo usa otro sitio, y recarga Apache.
+6. Comprueba que `login.php` y `api/ingest.php` respondan.
+7. Con `--receptores`: reinicia en pm2 `zy-receiver` y `zy-water-udp` desde `receivers/`, conservando su
+   carpeta de trabajo, argumentos (puerto, réplica a Zhongyi) y `FORWARD_DOWNLINK`/`WATER_DOWNLINK_ID`, y añade
+   el token de ingesta. Otros nombres de proceso: `PM2_ENERGIA=... PM2_AGUA=... sudo -E bash deploy/instalar.sh ...`
+
+Actualizar: `cd /var/www/monitor && sudo git pull && sudo bash deploy/instalar.sh --dominio monitor.minkafab.com --receptores`
+
+### Instalación manual (referencia)
+Lo que hace el script, paso a paso, por si se prefiere a mano:
 ```bash
 sudo apt install php php-pgsql libapache2-mod-php postgresql
 sudo git clone https://github.com/malbuja10/monitor_luz_agua_gas /var/www/monitor
