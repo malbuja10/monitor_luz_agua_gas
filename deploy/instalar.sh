@@ -115,14 +115,26 @@ if [ ! -e /etc/apache2/sites-enabled/medidores.conf ] && command -v ss >/dev/nul
    && ss -ltnH "sport = :$PUERTO" 2>/dev/null | grep -q .; then
   fallo "El puerto $PUERTO ya está en uso por otro programa: $(ss -ltnpH "sport = :$PUERTO" | head -1). Use --puerto."
 fi
+# Sin config.php, un usuario o base existentes solo se reutilizan si son restos de esta plataforma:
+# la base pertenece a ese usuario y solo contiene tablas de este esquema, o el usuario no es dueño de ninguna base.
 if [ "$CONF_NUEVA" -eq 1 ] && command -v psql >/dev/null; then
   systemctl start postgresql 2>/dev/null || service postgresql start >/dev/null 2>&1 || true
-  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$DB_USUARIO'" 2>/dev/null | grep -q 1; then
-    fallo "Ya existe el usuario de PostgreSQL '$DB_USUARIO' (¿de otro sitio?). No se modifica. Use DB_USUARIO=otro_nombre."
+  pg() { sudo -u postgres psql -tAq "$@" 2>/dev/null; }
+  TABLAS="'usuarios','medidores','lecturas','alarmas','comandos','auditoria'"
+  ROL_EXISTE="$(pg -c "SELECT count(*) FROM pg_roles WHERE rolname = '$DB_USUARIO'")"
+  BD_DUENO="$(pg -c "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '$DB_NOMBRE'")"
+  if [ -n "$BD_DUENO" ]; then
+    AJENAS="$(pg -d "$DB_NOMBRE" -c "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')
+                                     AND NOT (schemaname = 'public' AND tablename IN ($TABLAS))")"
+    if [ "$BD_DUENO" != "$DB_USUARIO" ] || [ "$AJENAS" != "0" ]; then
+      fallo "Ya existe la base '$DB_NOMBRE' (dueño '$BD_DUENO', $AJENAS tabla(s) ajenas a esta plataforma). No se modifica. Use DB_NOMBRE=otro_nombre."
+    fi
+    aviso "La base '$DB_NOMBRE' es de una instalación anterior de esta plataforma: se reutiliza con sus datos."
+  elif [ "$ROL_EXISTE" = "1" ]; then
+    N_BD="$(pg -c "SELECT count(*) FROM pg_database WHERE datdba = (SELECT oid FROM pg_roles WHERE rolname = '$DB_USUARIO')")"
+    [ "$N_BD" = "0" ] || fallo "El usuario de PostgreSQL '$DB_USUARIO' es dueño de otras bases. No se modifica. Use DB_USUARIO=otro_nombre."
   fi
-  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NOMBRE'" 2>/dev/null | grep -q 1; then
-    fallo "Ya existe la base de datos '$DB_NOMBRE' (¿de otro sitio?). No se modifica. Use DB_NOMBRE=otro_nombre."
-  fi
+  [ "$ROL_EXISTE" = "1" ] && aviso "El usuario '$DB_USUARIO' es de una instalación anterior sin config.php: se le asigna una contraseña nueva."
 fi
 ok "Puerto $PUERTO, archivo de Apache y base '$DB_NOMBRE' / usuario '$DB_USUARIO' libres o propios"
 
