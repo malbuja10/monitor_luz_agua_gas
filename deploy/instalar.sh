@@ -171,7 +171,7 @@ SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'usr') WHERE NOT EXISTS (SE
 SQL
 ok "Rol '$DB_USUARIO' y base '$DB_NOMBRE' listos"
 export PGPASSWORD="$DB_CLAVE"
-psql -q -h 127.0.0.1 -U "$DB_USUARIO" -d "$DB_NOMBRE" -v ON_ERROR_STOP=1 -f "$APP/sql/schema.sql" -f "$APP/sql/seed.sql" >/dev/null
+PGOPTIONS="-c client_min_messages=warning" psql -q -h 127.0.0.1 -U "$DB_USUARIO" -d "$DB_NOMBRE" -v ON_ERROR_STOP=1 -f "$APP/sql/schema.sql" -f "$APP/sql/seed.sql" >/dev/null
 unset PGPASSWORD
 ok "Esquema aplicado y medidores de prueba cargados (sin duplicar)"
 
