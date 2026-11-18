@@ -2,8 +2,8 @@
 // Copiar a config/config.php y ajustar. config.php NO se sube al repositorio.
 return [
     'db' => [
-        'dsn'      => 'pgsql:host=127.0.0.1;port=5432;dbname=medidores',
-        'usuario'  => 'medidores',
+        'dsn'      => 'pgsql:host=127.0.0.1;port=5432;dbname=monitor_medidores',
+        'usuario'  => 'monitor_medidores',
         'clave'    => 'CAMBIAR',
     ],
     'zona_horaria' => 'America/Bogota',

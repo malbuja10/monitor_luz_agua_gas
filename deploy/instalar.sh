@@ -18,8 +18,8 @@
 #                  variables FORWARD_DOWNLINK / WATER_DOWNLINK_ID de los procesos actuales.
 #   --sin-apt      no instala paquetes
 #
-# Variables opcionales: PM2_ENERGIA (zy-receiver), PM2_AGUA (zy-water-udp), DB_NOMBRE (medidores),
-#                       DB_USUARIO (medidores), DIR_LOGS (/var/lib/medidores, solo si el proceso no existía),
+# Variables opcionales: PM2_ENERGIA (zy-receiver), PM2_AGUA (zy-water-udp), DB_NOMBRE (monitor_medidores),
+#                       DB_USUARIO (monitor_medidores), DIR_LOGS (/var/lib/medidores, solo si el proceso no existía),
 #                       CERT y KEY (rutas del certificado TLS).
 set -euo pipefail
 
@@ -40,8 +40,8 @@ done
 APP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PM2_ENERGIA="${PM2_ENERGIA:-zy-receiver}"
 PM2_AGUA="${PM2_AGUA:-zy-water-udp}"
-DB_NOMBRE="${DB_NOMBRE:-medidores}"
-DB_USUARIO="${DB_USUARIO:-medidores}"
+DB_NOMBRE="${DB_NOMBRE:-monitor_medidores}"
+DB_USUARIO="${DB_USUARIO:-monitor_medidores}"
 DIR_LOGS="${DIR_LOGS:-/var/lib/medidores}"
 CONF="$APP/config/config.php"
 CONF_APACHE=/etc/apache2/sites-available/medidores.conf
@@ -138,8 +138,8 @@ if [ -f "$CONF" ]; then
 else
   DB_CLAVE="$(php -r 'echo bin2hex(random_bytes(18));')"
   TOKEN="$(php -r 'echo bin2hex(random_bytes(24));')"
-  sed -e "s|dbname=medidores'|dbname=$DB_NOMBRE'|" \
-      -e "s|'usuario'  => 'medidores'|'usuario'  => '$DB_USUARIO'|" \
+  sed -e "s|dbname=monitor_medidores'|dbname=$DB_NOMBRE'|" \
+      -e "s|'usuario'  => 'monitor_medidores'|'usuario'  => '$DB_USUARIO'|" \
       -e "s|'clave'    => 'CAMBIAR'|'clave'    => '$DB_CLAVE'|" \
       -e "s|'ingest_token' => 'CAMBIAR'|'ingest_token' => '$TOKEN'|" \
       "$APP/config/config.example.php" > "$CONF"

@@ -34,12 +34,12 @@ sudo bash deploy/instalar.sh --receptores
 `deploy/instalar.sh` se puede ejecutar todas las veces que haga falta (no borra datos ni cambia claves).
 **Antes de modificar nada** comprueba que no choca con otros sitios y se detiene si:
 el puerto ya está en otra configuración de Apache o en uso por otro programa; `sites-available/medidores.conf`
-existe y no es de esta plataforma; o (en una instalación nueva) ya existen el usuario o la base `medidores` en PostgreSQL.
+existe y no es de esta plataforma; o (en una instalación nueva) ya existen el usuario o la base `monitor_medidores` en PostgreSQL (la base `monitor` es de otro sitio).
 
 Luego:
 1. Instala los paquetes que falten (`apache2`, `postgresql`, `php-cli`, `php-pgsql`, `curl`) y verifica PHP ≥ 8.1.
 2. Crea `config/config.php` con contraseña de BD y token de ingesta aleatorios (si ya existe, lo conserva).
-3. Crea el usuario y la base `medidores`, aplica `sql/schema.sql` y `sql/seed.sql`.
+3. Crea el usuario y la base `monitor_medidores`, aplica `sql/schema.sql` y `sql/seed.sql`.
 4. Si no hay usuarios, pide la contraseña del administrador `admin`.
 5. Instala el VirtualHost en el puerto 8450 (HTTPS si encuentra el certificado), abre el puerto en `ufw` y
    reinicia Apache. Si `configtest` falla, deshabilita el sitio para no afectar a los demás.
@@ -63,8 +63,8 @@ sudo git clone https://github.com/malbuja10/monitor_luz_agua_gas /var/www/medido
 cd /var/www/medidores
 
 # Base de datos
-sudo -u postgres psql -c "CREATE USER medidores PASSWORD 'una-clave-fuerte'" -c "CREATE DATABASE medidores OWNER medidores"
-PGPASSWORD='una-clave-fuerte' psql -h 127.0.0.1 -U medidores -d medidores -f sql/schema.sql -f sql/seed.sql
+sudo -u postgres psql -c "CREATE USER monitor_medidores PASSWORD 'una-clave-fuerte'" -c "CREATE DATABASE monitor_medidores OWNER monitor_medidores"
+PGPASSWORD='una-clave-fuerte' psql -h 127.0.0.1 -U monitor_medidores -d monitor_medidores -f sql/schema.sql -f sql/seed.sql
 
 # Configuración (clave de BD + token de ingesta)
 cp config/config.example.php config/config.php
