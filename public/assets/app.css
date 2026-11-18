@@ -1,0 +1,101 @@
+:root {
+  --fondo: #f4f6f9; --panel: #ffffff; --texto: #1d2733; --suave: #5f6b7a; --borde: #dde3ea;
+  --acento: #1f6feb; --ok: #1a7f37; --ok-f: #dcf5e3; --aviso: #9a6700; --aviso-f: #fff4d1;
+  --mal: #c62828; --mal-f: #fde4e4; --apagado: #6e7781; --apagado-f: #eceff2;
+  --energia: #e09b00; --agua: #1f78d1; --gas: #d1491f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #0f141a; --panel: #18202a; --texto: #e6edf3; --suave: #95a1ae; --borde: #2a3542;
+    --acento: #4c8eff; --ok: #4ac26b; --ok-f: #12301c; --aviso: #e3b341; --aviso-f: #3a2d0a;
+    --mal: #ff6b6b; --mal-f: #3d1515; --apagado: #8b949e; --apagado-f: #242c36;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+       background: var(--fondo); color: var(--texto); }
+a { color: var(--acento); text-decoration: none; }
+a:hover { text-decoration: underline; }
+main { max-width: 1280px; margin: 0 auto; padding: 20px 16px 48px; }
+h1 { font-size: 1.45rem; margin: 0 0 16px; }
+h2 { font-size: 1.1rem; margin: 0 0 12px; }
+
+.barra { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 10px 16px;
+         background: var(--panel); border-bottom: 1px solid var(--borde); }
+.marca { font-weight: 700; color: var(--texto); font-size: 1.05rem; }
+.barra nav { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+.barra nav a { padding: 6px 12px; border-radius: 6px; color: var(--suave); }
+.barra nav a.activo, .barra nav a:hover { background: var(--fondo); color: var(--texto); text-decoration: none; }
+.insignia { background: var(--mal); color: #fff; border-radius: 10px; padding: 0 7px; font-size: .75rem; margin-left: 4px; }
+.salir { display: flex; align-items: center; gap: 10px; margin: 0; }
+.quien { color: var(--suave); font-size: .85rem; }
+.btn-link { background: none; border: 0; color: var(--acento); cursor: pointer; font: inherit; padding: 0; }
+
+.panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.rejilla { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+.dos { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 860px) { .dos { grid-template-columns: 1fr; } }
+
+.resumen { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 20px; }
+.resumen .panel { margin: 0; }
+.resumen .cifra { font-size: 1.8rem; font-weight: 700; }
+.resumen .etq { color: var(--suave); font-size: .85rem; }
+
+.tarjeta { display: flex; flex-direction: column; gap: 8px; border-left: 4px solid var(--borde); color: var(--texto); }
+.tarjeta:hover { text-decoration: none; border-color: var(--acento); }
+.tarjeta.energia { border-left-color: var(--energia); }
+.tarjeta.agua { border-left-color: var(--agua); }
+.tarjeta.gas { border-left-color: var(--gas); }
+.tarjeta .cab { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
+.tarjeta .nombre { font-weight: 600; }
+.tarjeta .num { color: var(--suave); font-size: .8rem; font-family: ui-monospace, monospace; }
+.tarjeta .lectura { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tarjeta .lectura small { font-size: .9rem; color: var(--suave); font-weight: 400; }
+.tarjeta .meta { display: flex; gap: 12px; flex-wrap: wrap; color: var(--suave); font-size: .82rem; }
+
+.chip { display: inline-block; padding: 1px 9px; border-radius: 12px; font-size: .78rem; white-space: nowrap; }
+.chip.ok { background: var(--ok-f); color: var(--ok); }
+.chip.aviso { background: var(--aviso-f); color: var(--aviso); }
+.chip.mal { background: var(--mal-f); color: var(--mal); }
+.chip.apagado { background: var(--apagado-f); color: var(--apagado); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.filtros { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+.filtros a { padding: 5px 12px; border-radius: 16px; border: 1px solid var(--borde); color: var(--texto); background: var(--panel); }
+.filtros a.activo { background: var(--acento); color: #fff; border-color: var(--acento); }
+
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+th { color: var(--suave); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.tabla-scroll { overflow-x: auto; }
+code, .mono { font-family: ui-monospace, monospace; font-size: .82rem; }
+
+.datos { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+.datos dt { color: var(--suave); }
+.datos dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+form.fila { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+label { display: block; font-size: .85rem; color: var(--suave); margin-bottom: 4px; }
+input, select, textarea { font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--borde);
+                          background: var(--fondo); color: var(--texto); }
+.campo { margin-bottom: 12px; }
+.campo input, .campo select { width: 100%; }
+button, .btn { font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--acento);
+               background: var(--acento); color: #fff; cursor: pointer; display: inline-block; }
+button.sec, .btn.sec { background: transparent; color: var(--acento); }
+button.peligro { background: var(--mal); border-color: var(--mal); }
+button.ok { background: var(--ok); border-color: var(--ok); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+.aviso { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+.aviso.ok { background: var(--ok-f); color: var(--ok); }
+.aviso.error { background: var(--mal-f); color: var(--mal); }
+.vacio { color: var(--suave); padding: 12px 0; }
+
+.login { max-width: 360px; margin: 10vh auto; }
+.grafico { position: relative; height: 280px; }
+.rangos { display: flex; gap: 6px; }
+.rangos button { padding: 3px 10px; font-size: .82rem; }
+.titulo-fila { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.titulo-fila h1, .titulo-fila h2 { margin: 0; }
