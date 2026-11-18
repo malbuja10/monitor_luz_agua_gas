@@ -179,8 +179,12 @@ paso "Usuarios"
 N_USR="$(php -r 'require $argv[1]; echo q("SELECT count(*) FROM usuarios")->fetchColumn();' "$APP/src/bootstrap.php")"
 if [ "$N_USR" -eq 0 ]; then
   if [ -t 0 ]; then
-    echo "   No hay usuarios. Se crea el administrador 'admin':"
-    php "$APP/scripts/crear_usuario.php" admin admin "Administrador"
+    echo "   No hay usuarios. Se crea el administrador 'admin' (contraseña de al menos 8 caracteres):"
+    CREADO=0
+    for _ in 1 2 3; do
+      if php "$APP/scripts/crear_usuario.php" admin admin "Administrador"; then CREADO=1; break; fi
+    done
+    [ "$CREADO" -eq 1 ] || aviso "No se creó 'admin'. Créelo luego con: sudo php $APP/scripts/crear_usuario.php admin admin"
   else
     aviso "No hay usuarios. Cree el primero con: sudo php $APP/scripts/crear_usuario.php admin admin"
   fi
